@@ -194,6 +194,8 @@ tbody tr{cursor:pointer}
 .ck{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .ck i{width:12px;height:2.5px;border-radius:2px;display:inline-block}
 .ck i.ln{width:14px;height:2px}
+.ck i.ln.dsh{height:0;background:none !important;border-bottom:2px dashed currentColor;
+  color:#4d9fff}
 .ck i.dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
 .ck i.dot.hollow{background:transparent;border:1.4px solid var(--dim2)}
 .ck.sep{margin-left:auto}
@@ -1225,15 +1227,18 @@ function priceChart(s, w=760, h=330){
   g+=`<polygon points="${X(0).toFixed(1)},${(h-B).toFixed(1)} ${linePts} `
     +`${X(n-1).toFixed(1)},${(h-B).toFixed(1)}" fill="url(#g${uid})"/>`;
 
-  // SMA lines — thin, so the white price line stays the focus
+  // SMA lines — thin, so the white price line stays the focus. The 20-day is
+  // dashed to mark it as the short-term/noisy average, matching its small
+  // crossing markers.
   smas.forEach(([p,arr,col])=>{
     if(!arr||arr.length<2) return;
     const off=n-arr.length;
     const pts=arr.map((v,i)=>Number.isFinite(v)?`${X(i+off).toFixed(1)},${Y(v).toFixed(1)}`:null)
                  .filter(Boolean);
+    const dash=p===20?' stroke-dasharray="4 3"':'';
     if(pts.length>1)
       g+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${col}" `
-        +`stroke-width="1.1" opacity=".65" stroke-linejoin="round"/>`;
+        +`stroke-width="1.1" opacity=".65" stroke-linejoin="round"${dash}/>`;
   });
 
   g+=`<polyline points="${linePts}" fill="none" stroke="#f2f6fc" stroke-width="1.9" `
@@ -1286,7 +1291,7 @@ function priceChart(s, w=760, h=330){
   }
 
   const key=smas.filter(([,a])=>a&&a.length>1)
-    .map(([p,,c])=>`<span class="ck"><i style="background:${c}"></i>${p}-day</span>`).join('');
+    .map(([p,,c])=>`<span class="ck"><i class="ln${p===20?' dsh':''}" style="background:${c}"></i>${p}-day</span>`).join('');
   return `<div class="chartwrap">`
     + `<div class="clegend"><span class="ck"><i class="ln" style="background:#f2f6fc"></i>Price</span>${key}`
     + `<span class="ck sep"><i class="dot"></i>cross held</span>`
