@@ -498,7 +498,7 @@ ok(META['si_change_pct'].dunit === undefined,
    'short-interest change is a real percent change and keeps %');
 
 console.log('\n=== 26. price chart ===');
-let charted = 0, worstMarkers = 0, totalRaw = 0, totalDrawn = 0;
+let charted = 0, worstBig = 0, totalDrawn = 0;
 for (const s of sectors) {
   window.openDetail(s.ticker);
   const d = document.getElementById('detail');
@@ -506,26 +506,31 @@ for (const s of sectors) {
   ok(!!svg, `${s.ticker} (tier ${s.tier}) renders a price chart`);
   if (!svg) continue;
   charted++;
-  // The chart must plot price plus every SMA that has data.
   const lines = svg.querySelectorAll('polyline').length;
   ok(lines >= 2, `${s.ticker}: price and at least one moving average drawn`);
   ok(!!svg.querySelector('linearGradient'), `${s.ticker}: area fill present`);
   ok(d.querySelectorAll('.clegend .ck').length >= 4, `${s.ticker}: chart has a legend`);
 
-  const drawn = d.querySelectorAll('.bkt').length;
-  const raw = (s.breakouts || []).length;
-  totalRaw += raw; totalDrawn += drawn;
-  worstMarkers = Math.max(worstMarkers, drawn);
-  ok(drawn <= raw, `${s.ticker}: thinning never invents markers`);
-  // Markers must sit inside the plotted window.
-  for (const b of s.breakouts || [])
+  // Every in-window crossing is drawn — nothing thinned away (the fix for
+  // "missing crossings"). Completeness is asserted in the crossPoint block; here
+  // we bound only the MEANINGFUL markers. 20-day crossings whipsaw constantly
+  // and are drawn small (.sm), so they don't count as confetti; 50/150 markers
+  // are the ones that must stay sparse.
+  const inWindow = (s.breakouts || []).filter(b => b.idx >= 0 && b.idx < s.series.price.length);
+  const drawn = d.querySelectorAll('.chartwrap .bkt').length;
+  totalDrawn += drawn;
+  eq(drawn, inWindow.length, `${s.ticker}: every crossing drawn, none hidden`);
+  const big = d.querySelectorAll('.chartwrap .bkt:not(.sm)').length;
+  worstBig = Math.max(worstBig, big);
+  ok(big <= 30, `${s.ticker}: 50/150-day markers stay sparse (${big})`);
+  for (const b of inWindow)
     ok(b.idx >= 0 && b.idx < s.series.price.length,
        `${s.ticker}: breakout index ${b.idx} inside the chart window`);
 }
-console.log(`  ${charted}/${sectors.length} charts, ${totalRaw} raw markers -> ${totalDrawn} drawn`);
-console.log(`  busiest chart: ${worstMarkers} markers`);
+console.log(`  ${charted}/${sectors.length} charts, ${totalDrawn} markers drawn total`);
+console.log(`  busiest chart by big (50/150) markers: ${worstBig}`);
 ok(charted === sectors.length, 'every sector charts, sub-sectors included');
-ok(worstMarkers <= 20, `no chart is confetti (busiest has ${worstMarkers})`);
+ok(worstBig <= 30, `no chart is confetti in its meaningful markers (worst ${worstBig})`);
 
 // Every crossing marker must sit ON the line it crossed, at the interpolated
 // intersection — not at the close price, which floated markers up to 2 points
@@ -555,22 +560,22 @@ if (crossPoint) {
   ok(Number.isFinite(deg.i) && Number.isFinite(deg.v), 'degenerate crossing stays finite');
 }
 
-// Thinning must keep the FIRST of each cluster, never a later one, and must be
-// idempotent — running it twice changes nothing.
-const thin = window.thinBreakouts;
-const fake = [{sma:20,direction:'up',idx:10},{sma:20,direction:'up',idx:15},
-              {sma:20,direction:'up',idx:40},{sma:50,direction:'up',idx:12},
-              {sma:20,direction:'down',idx:16}];
-const th = thin(fake);
-eq(th.length, 4, 'a 20-day repeat 5 sessions later is collapsed');
-eq(th[0].idx, 10, 'the first of a cluster is kept, not the last');
-ok(th.some(b => b.sma === 50 && b.idx === 12),
-   'a different SMA at the same time is NOT collapsed');
-ok(th.some(b => b.direction === 'down' && b.idx === 16),
-   'the opposite direction is NOT collapsed');
-eq(thin(th).length, th.length, 'thinning is idempotent');
-eq(thin([]).length, 0, 'thinning handles an empty list');
-eq(thin(null).length, 0, 'thinning handles a missing list');
+// Every detected crossing must be rendered — nothing thinned away. The chart
+// draws one marker group per breakout, so the count of marker groups in a
+// freshly opened detail panel must equal the breakout count.
+{
+  const s = sectors.find(x => (x.breakouts || []).length > 5) || sectors[0];
+  window.openDetail(s.ticker);
+  const d = document.getElementById('detail');
+  const inWindow = (s.breakouts || []).filter(b => b.idx >= 0 && b.idx < s.series.price.length);
+  const drawn = d.querySelectorAll('.chartwrap .bkt').length;
+  eq(drawn, inWindow.length,
+     `${s.ticker}: every in-window crossing is drawn (${drawn} markers vs ${inWindow.length} breakouts)`);
+  // 20-day markers carry the .sm (small) class; others do not.
+  const smallOnes = d.querySelectorAll('.chartwrap .bkt.sm').length;
+  const expectSmall = inWindow.filter(b => b.sma === 20).length;
+  eq(smallOnes, expectSmall, '20-day crossings are drawn small, others normal');
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

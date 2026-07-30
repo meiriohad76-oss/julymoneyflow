@@ -1162,27 +1162,12 @@ function enhanceTables(root){
   });
 }
 
-/* ---------------- price chart with SMA breakout markers ---------------- */
-/* Collapse breakout clusters.
-   A real chart carried up to 30 markers over 120 sessions — one every four days,
-   which reads as confetti rather than information. Measured across all 32
-   sectors, each SMA is re-crossed every ~7 sessions, and the 20-day alone
-   produces half of all markers.
-
-   The clustering window scales with the SMA period, because that is what makes
-   it meaningful: re-crossing a 20-day average within 20 sessions is the same
-   episode wobbling, not two events, and the same logic at 150 days needs 150
-   sessions of separation. A fixed 8-session gap removed only 16% of markers;
-   scaling to the period removes 46% and caps the busiest chart at 15. */
-function thinBreakouts(list){
-  const out=[], last={};
-  for(const b of (list||[]).slice().sort((a,c)=>a.idx-c.idx)){
-    const k=b.sma+':'+b.direction;
-    if(last[k]!==undefined && b.idx-last[k] < b.sma) continue;
-    last[k]=b.idx; out.push(b);
-  }
-  return out;
-}
+/* ---------------- price chart with SMA breakout markers ----------------
+   Earlier versions thinned crossings to reduce clutter, but that hid genuine
+   re-crossings and made lone markers look mis-directed. Every real crossing is
+   now shown; whipsaws are marked hollow (failed next session) rather than
+   dropped, and 20-day markers are drawn smaller since that average is the
+   noisiest. Correctness over tidiness. */
 
 /* The exact point where price crossed the SMA — the intersection of the two
    line segments spanning [idx-1, idx], NOT the close on the detection bar.
@@ -1264,23 +1249,27 @@ function priceChart(s, w=760, h=330){
     +`<text x="${(w-R/2).toFixed(1)}" y="${(lastY+4).toFixed(1)}" text-anchor="middle" `
     +`class="ax" fill="${accent}" style="font-weight:650">${price[n-1].toFixed(2)}</text>`;
 
-  // Crossing markers, placed AT the intersection. A small ring hugging the
-  // crossing point with a short arrow in the cross direction. Confirmed = the
-  // ring is filled; failed-next-session = hollow.
-  const shown=thinBreakouts(s.breakouts);
-  shown.forEach(b=>{
+  // EVERY crossing, placed AT the intersection. A ring on the crossing point
+  // with a short arrow in the direction price crossed. Held = filled ring;
+  // failed-next-session (whipsaw) = hollow. Nothing is hidden — a lone marker
+  // with no visible partner used to look like a wrong direction; showing the
+  // paired re-cross fixes that. 20-day markers are drawn smaller because that
+  // average whipsaws most, so its crossings should read as the quietest.
+  (s.breakouts||[]).forEach(b=>{
     if(b.idx<0||b.idx>=n) return;
     const cp=crossPoint(b, price, smaMap[b.sma]||[], n);
     const x=X(cp.i), y=Y(cp.v), isUp=b.direction==='up';
     const col=smaCol[b.sma]||'#8b9ab5';
     const solid=b.confirmed!==false;
-    const dir=isUp?-1:1;                                 // arrow points the way price crossed
-    const ax=x, ay=y+dir*10;                             // arrowhead tip
-    g+=`<g class="bkt" data-b='${JSON.stringify(b).replace(/'/g,"&#39;")}'>`
+    const small=b.sma===20;
+    const r=small?2.4:3.4, alen=small?7:10, aw=small?2.4:3;
+    const dir=isUp?-1:1;
+    const ax=x, ay=y+dir*alen;
+    g+=`<g class="bkt${small?' sm':''}" data-b='${JSON.stringify(b).replace(/'/g,"&#39;")}'>`
       +`<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${ax.toFixed(1)}" y2="${ay.toFixed(1)}" `
-      +`stroke="${col}" stroke-width="1.2" opacity=".8"/>`
-      +`<polygon points="${ax.toFixed(1)},${(ay+dir*3).toFixed(1)} ${(ax-3).toFixed(1)},${(ay-dir*2).toFixed(1)} ${(ax+3).toFixed(1)},${(ay-dir*2).toFixed(1)}" fill="${col}"/>`
-      +`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${solid?col:'#0c1220'}" `
+      +`stroke="${col}" stroke-width="1.1" opacity="${small?0.6:0.85}"/>`
+      +`<polygon points="${ax.toFixed(1)},${(ay+dir*aw).toFixed(1)} ${(ax-aw).toFixed(1)},${(ay-dir*(aw*0.7)).toFixed(1)} ${(ax+aw).toFixed(1)},${(ay-dir*(aw*0.7)).toFixed(1)}" fill="${col}" opacity="${small?0.75:1}"/>`
+      +`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${solid?col:'#0c1220'}" `
       +`stroke="${col}" stroke-width="1.4"/>`
       +`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/></g>`;
   });
@@ -1296,14 +1285,12 @@ function priceChart(s, w=760, h=330){
     });
   }
 
-  const hid=(s.breakouts||[]).length - shown.length;
   const key=smas.filter(([,a])=>a&&a.length>1)
     .map(([p,,c])=>`<span class="ck"><i style="background:${c}"></i>${p}-day</span>`).join('');
   return `<div class="chartwrap">`
     + `<div class="clegend"><span class="ck"><i class="ln" style="background:#f2f6fc"></i>Price</span>${key}`
-    + `<span class="ck sep"><i class="dot"></i>held</span>`
-    + `<span class="ck"><i class="dot hollow"></i>failed next session</span>`
-    + (hid>0?`<span class="ck dim">${hid} whipsaw repeat${hid===1?'':'s'} hidden</span>`:'')
+    + `<span class="ck sep"><i class="dot"></i>cross held</span>`
+    + `<span class="ck"><i class="dot hollow"></i>whipsaw (failed next session)</span>`
     + `</div>`
     + `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMidYMid meet">${g}</svg>`
     + `</div>`;

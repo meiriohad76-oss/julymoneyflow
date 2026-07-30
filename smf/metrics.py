@@ -936,7 +936,7 @@ SMA_BREAKOUT_PERIODS = (20, 50, 150)
 def sma_breakouts(df: pd.DataFrame,
                   periods: tuple[int, ...] = SMA_BREAKOUT_PERIODS,
                   lookback: int = 120,
-                  min_gap: int = 3) -> dict:
+                  min_gap: int = 1) -> dict:
     """
     Breakout points in BOTH directions across the 20, 50 and 150-day SMAs.
 
@@ -945,9 +945,11 @@ def sma_breakouts(df: pd.DataFrame,
     upward cross of the 150-day is a very different event from an upward cross of
     the 20-day, and the framework treats a downward cross as an exit trigger.
 
-    `min_gap` suppresses whipsaw — crossings within `min_gap` sessions of the
-    previous one on the same average are dropped, since price oscillating around a
-    flat MA would otherwise produce a dozen meaningless "breakouts" in a fortnight.
+    `min_gap` was 3, which silently dropped genuine crossings a day or two apart
+    and made the chart look wrong: a lone down-marker with its paired up-cross
+    suppressed reads as a mistake when price is visibly back above the line.
+    Default is now 1 (every sign change is recorded); whipsaws are shown honestly
+    via `confirmed=False` (hollow markers) rather than hidden.
 
     Each point carries the context needed to judge it:
         volume_ratio  volume vs its own 50-day average on the crossing bar
