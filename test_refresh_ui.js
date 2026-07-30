@@ -75,7 +75,8 @@ const READY = { built_at: 1785000000, built_age_sec: 120, queued: false,
     eq(d.getElementById('rfz-get').disabled, false, 'fetch is enabled');
     ok(/cache/i.test(d.getElementById('rfz-off').textContent), 'free button mentions cache');
     ok(/fetch|latest/i.test(d.getElementById('rfz-get').textContent), 'paid button mentions fetching');
-    ok(/quota/i.test(d.getElementById('rfz-get').title), 'paid button warns about quota in its tooltip');
+    ok(/polygon|minutes|fresh/i.test(d.getElementById('rfz-get').title),
+       'paid button explains what fetching does');
     ok(/built/i.test(d.getElementById('rfz-msg').textContent), 'status line reports when data was built');
     dom.window.close();
   }
@@ -164,6 +165,44 @@ const READY = { built_at: 1785000000, built_age_sec: 120, queued: false,
     await settle();
     const msg = dom.window.document.getElementById('rfz-msg').textContent;
     ok(expect.test(msg), `HTTP ${code} is explained to the user (got "${msg}")`);
+    dom.window.close();
+  }
+
+  console.log('\n=== 9. a transient poll failure does not read as "lost contact" ===');
+  {
+    // A full fetch runs for minutes; through the tunnel a single status poll can
+    // fail without the run having failed. The loop must tolerate a run of
+    // failures rather than giving up on the first, which previously turned a
+    // healthy multi-minute fetch into an error message.
+    let calls = 0;
+    const dom = new JSDOM(HTML, {
+      runScripts: 'dangerously', url: 'http://pi.local/',
+      beforeParse(w) {
+        w.Element.prototype.scrollIntoView = function () {};
+        w.confirm = () => true;
+        w.fetch = (u, o) => {
+          calls++;
+          if (String(u).startsWith('/refresh'))
+            return Promise.resolve({ ok: true, status: 202,
+              json: () => Promise.resolve(Object.assign({}, READY, { running: true })) });
+          // First status after the POST works (running); then two fail; then
+          // it recovers and reports completion.
+          if (calls <= 2) return Promise.resolve({ ok: true, status: 200,
+            json: () => Promise.resolve(Object.assign({}, READY, { running: true })) });
+          if (calls <= 4) return Promise.reject(new Error('tunnel hiccup'));
+          return Promise.resolve({ ok: true, status: 200,
+            json: () => Promise.resolve(Object.assign({}, READY, { running: false })) });
+        };
+      },
+    });
+    await settle();
+    const d = dom.window.document;
+    d.getElementById('rfz-get').click();
+    // Let several poll cycles run (the loop waits 5s on failure).
+    await new Promise(r => setTimeout(r, 220));
+    const msg = d.getElementById('rfz-msg').textContent;
+    ok(!/lost contact/i.test(msg),
+       `a couple of failed polls do not immediately say "lost contact" (msg: "${msg}")`);
     dom.window.close();
   }
 

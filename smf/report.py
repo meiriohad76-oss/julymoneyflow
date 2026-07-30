@@ -1632,15 +1632,28 @@ window.addEventListener('resize',()=>drawRRG());
   async function poll(){
     if(polling) return;
     polling=true;
+    // A full fetch runs for minutes and reloads ~480 series. Through the tunnel,
+    // one status poll can time out under that load without the run having
+    // failed. Giving up on the first miss (the old behaviour) turned a healthy
+    // multi-minute fetch into "Lost contact". Tolerate several consecutive
+    // failures, and keep the last known state on screen while retrying.
+    let miss=0;
+    const MAX_MISS=8;      // ~40s of failed polls before conceding
     try{
       while(true){
-        const s=await status();
+        let s=null;
+        try{ s=await status(); miss=0; }
+        catch(e){
+          if(++miss>=MAX_MISS){ say('Lost contact with the server.','err'); break; }
+          say('Refreshing on the Pi... (reconnecting)','work');
+          await new Promise(r=>setTimeout(r,5000));
+          continue;
+        }
         paint(s);
         if(!(s.running||s.queued)) break;
         await new Promise(r=>setTimeout(r,3000));
       }
-    }catch(e){ say('Lost contact with the server.','err'); }
-    finally{ polling=false; }
+    }finally{ polling=false; }
   }
 
   async function go(mode){

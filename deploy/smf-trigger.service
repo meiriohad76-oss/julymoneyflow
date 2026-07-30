@@ -10,6 +10,10 @@ User=smf
 Group=smf
 WorkingDirectory=/opt/smf
 ExecStart=/bin/bash /opt/smf/deploy/refresh-runner.sh
+# Runs after the main process ends by ANY means, including SIGKILL -- unlike the
+# shell trap inside the runner, which a kill bypasses. This is what guarantees a
+# force-killed run cannot wedge every future refresh with a stale marker.
+ExecStopPost=/bin/rm -f /opt/smf/run/running
 TimeoutStartSec=45min
 
 # Same permissions as the scheduled refresh -- it runs the same pipeline. Needs

@@ -33,9 +33,20 @@ case "$MODE" in
   *) echo "invalid mode '$MODE'; refusing"; exit 1 ;;
 esac
 
+# A `running` marker older than any plausible run is stale: it was left by a
+# process that was SIGKILLed (systemd timeout, OOM, reboot), so its EXIT trap
+# never fired. Without this, one killed run wedges every future refresh with
+# "already running" forever -- which is exactly what happened once (a marker
+# from 04:26 blocking everything). 45 min matches TimeoutStartSec.
 if [[ -f "$RUNNING" ]]; then
-  echo "a refresh is already running; skipping"
-  exit 0
+  age=$(( $(date +%s) - $(stat -c %Y "$RUNNING" 2>/dev/null || echo 0) ))
+  if (( age > 2700 )); then
+    echo "clearing a stale running marker (${age}s old, from a killed run)"
+    rm -f "$RUNNING"
+  else
+    echo "a refresh is already running (${age}s); skipping"
+    exit 0
+  fi
 fi
 
 # Marker so /status can report progress, cleared on every exit path.
