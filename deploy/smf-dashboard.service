@@ -1,0 +1,70 @@
+[Unit]
+Description=Smart Money Flow dashboard (static server, loopback only)
+Documentation=file:///opt/smf/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=smf
+Group=smf
+WorkingDirectory=/opt/smf
+# Port is a variable so a clash with something else on the Pi is a one-line
+# override rather than an edit to a file the installer overwrites:
+#   sudo systemctl edit smf-dashboard
+#   [Service]
+#   Environment=SMF_PORT=18080
+Environment=SMF_PORT=8080
+ExecStart=/opt/smf/.venv/bin/python /opt/smf/deploy/serve.py --host 127.0.0.1 --port ${SMF_PORT}
+Restart=always
+RestartSec=5
+
+# --- hardening -------------------------------------------------------------
+# The server only ever reads two files and binds loopback, so it can be locked
+# down hard. Each of these closes a path an exploit would otherwise have.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+# entire filesystem read-only...
+ProtectSystem=strict
+ProtectHome=true
+# ...including our own code
+ReadOnlyPaths=/opt/smf
+# The single exception: the refresh buttons need to queue a request. This is one
+# directory holding one flag file. The server still cannot write to data/ or
+# output/, cannot execute anything, and cannot escalate privileges -- the actual
+# pipeline runs in smf-trigger.service, which has its own permissions.
+ReadWritePaths=/opt/smf/run
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+# Loopback only. AF_INET is needed to bind 127.0.0.1; no AF_UNIX, no AF_PACKET.
+RestrictAddressFamilies=AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Resource ceilings — a Pi should not be brought down by this process.
+MemoryMax=384M
+TasksMax=64
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smf-dashboard
+
+[Install]
+WantedBy=multi-user.target

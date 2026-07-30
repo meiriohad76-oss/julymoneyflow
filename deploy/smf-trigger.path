@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch for a queued dashboard refresh request
+Documentation=file:///opt/smf/deploy/README.md
+
+[Path]
+# The web server drops this file when a refresh button is pressed. Using
+# PathExists rather than a socket or a privileged call means the server needs no
+# capability beyond creating one file in one directory.
+PathExists=/opt/smf/run/refresh.request
+Unit=smf-trigger.service
+
+[Install]
+WantedBy=multi-user.target

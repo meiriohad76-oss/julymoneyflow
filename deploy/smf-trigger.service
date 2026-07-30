@@ -1,0 +1,42 @@
+[Unit]
+Description=Run a queued dashboard refresh
+Documentation=file:///opt/smf/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=smf
+Group=smf
+WorkingDirectory=/opt/smf
+ExecStart=/bin/bash /opt/smf/deploy/refresh-runner.sh
+TimeoutStartSec=45min
+
+# Same permissions as the scheduled refresh -- it runs the same pipeline. Needs
+# network for Polygon and FRED, and write access to data/, output/ and run/.
+# Everything not required is still denied.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/smf/data /opt/smf/output /opt/smf/run
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+MemoryMax=1200M
+Nice=10
+IOSchedulingClass=idle
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smf-refresh

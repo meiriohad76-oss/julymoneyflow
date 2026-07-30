@@ -1,0 +1,43 @@
+[Unit]
+Description=Smart Money Flow — regenerate dashboard from Polygon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=smf
+Group=smf
+WorkingDirectory=/opt/smf
+ExecStart=/opt/smf/.venv/bin/python /opt/smf/run.py
+# A Pi 4 takes ~1-3 min for the full 32-ETF universe from a warm cache. If the
+# cache is cold the first run pulls ~480 series and can take 15+ minutes.
+TimeoutStartSec=45min
+
+# Needs network (Polygon + FRED) and WRITE access to data/ and output/, so it
+# cannot be locked down as hard as the server. Everything not required is still
+# denied.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/smf/data /opt/smf/output
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+MemoryMax=1200M
+Nice=10
+IOSchedulingClass=idle
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smf-refresh

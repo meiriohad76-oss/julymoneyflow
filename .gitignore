@@ -1,0 +1,64 @@
+# =============================================================================
+# NEVER COMMIT — secrets
+# =============================================================================
+# Contains POLYGON_API_KEY. The repository is PUBLIC; a committed key is a
+# leaked key, and rewriting history does not un-leak it because GitHub keeps
+# unreferenced commits reachable by SHA and forks retain them. If this ever gets
+# committed, rotate the key at polygon.io first and treat cleanup as secondary.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+*-credentials.json
+# cloudflared tunnel credentials
+.cloudflared/
+[0-9a-f][0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*.json
+
+# =============================================================================
+# Derived data — reproducible, and far too large for git
+# =============================================================================
+# 53 MB of price CSVs, rebuilt by warm_cache.py in minutes. Committing it would
+# also mean every refresh produces a huge, meaningless diff.
+data/
+
+# Generated artefacts. dashboard.html is ~770 KB of machine-written markup that
+# changes completely on every run, so it makes git history unreadable.
+#
+# NOTE: if you later publish via GitHub Pages you must un-ignore
+# output/dashboard.html — and understand that doing so makes the dashboard
+# WORLD-READABLE, which defeats the Cloudflare Access protection on
+# julymoneyflow.ahaddashboards.uk.
+output/
+
+# Run logs
+*.log
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =============================================================================
+# Node — only used by the browser test suites
+# =============================================================================
+node_modules/
+package-lock.json
+
+# =============================================================================
+# Editors and OS
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

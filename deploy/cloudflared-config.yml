@@ -1,0 +1,30 @@
+# /etc/cloudflared/config.yml
+#
+# Point the tunnel at the LOOPBACK server. The Pi never listens on the LAN, has
+# no port forwarded, and does not expose your home IP — cloudflared makes an
+# outbound connection to Cloudflare and traffic returns through it.
+#
+# Replace <TUNNEL-UUID> and the hostname with your own.
+
+tunnel: <TUNNEL-UUID>
+credentials-file: /etc/cloudflared/<TUNNEL-UUID>.json
+
+# Survive brief network drops without flapping.
+retries: 5
+grace-period: 30s
+protocol: quic
+loglevel: info
+
+ingress:
+  - hostname: smf.example.com
+    service: http://127.0.0.1:8080
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: false
+      # The dashboard is one ~700KB HTML file; these are generous.
+      httpHostHeader: smf.example.com
+      disableChunkedEncoding: false
+
+  # Mandatory catch-all. Anything not matched above is refused rather than
+  # forwarded somewhere unintended.
+  - service: http_status:404

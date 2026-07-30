@@ -1,0 +1,38 @@
+# Line-ending policy.
+#
+# WHY THIS MATTERS HERE, beyond tidiness: deploy/push-to-pi.ps1 tars the working
+# copy and ships it to a Linux box. Git on Windows defaults to converting LF to
+# CRLF on checkout, and a shell script with CRLF fails on Linux with
+#
+#     bad interpreter: /usr/bin/env bash^M
+#
+# while a systemd unit with CRLF silently gets a trailing \r inside every
+# directive value. Both files must therefore stay LF regardless of platform.
+
+# Sensible default: normalise to LF in the repository, let git decide locally.
+* text=auto
+
+# --- must be LF in the working copy, because they run on Linux -------------
+*.sh            text eol=lf
+*.service       text eol=lf
+*.timer         text eol=lf
+*.path          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Python is run on both sides; LF everywhere avoids diff noise and is what the
+# Pi's interpreter sees.
+*.py            text eol=lf
+
+# --- CRLF is correct: these only ever run on Windows -----------------------
+*.ps1           text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# --- leave alone ------------------------------------------------------------
+*.png           binary
+*.jpg           binary
+*.pdf           binary
+*.xlsx          binary
+*.gz            binary
+*.tgz           binary

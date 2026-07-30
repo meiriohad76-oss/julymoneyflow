@@ -1,0 +1,15 @@
+[Unit]
+Description=Nightly Smart Money Flow refresh (after the US close)
+
+[Timer]
+# 22:15 America/New_York = 45 min after the 16:00 close, leaving room for
+# consolidated-tape corrections to settle before the data is pulled.
+OnCalendar=Mon..Fri 22:15 America/New_York
+# If the Pi was asleep or offline at the scheduled time, run on next boot.
+Persistent=true
+# Spread load so every Pi on earth doesn't hit Polygon on the same second.
+RandomizedDelaySec=600
+Unit=smf-refresh.service
+
+[Install]
+WantedBy=timers.target
