@@ -38,19 +38,33 @@ def post_webhook(payload: dict) -> None:
     if not url:
         print("No SMF_WEBHOOK_URL configured — skipping alert post.")
         return
-    hits = [s for s in payload["sectors"] if s["phase"] in config.WEBHOOK_MIN_PHASE]
-    if not hits:
-        print("No alert-grade signals to post.")
+
+    # Post ONLY what actually changed this run. alert_state has already applied
+    # fire-once semantics and the 21-session flap guard, so this no longer
+    # re-posts the same standing signals every night.
+    fired = payload.get("alerts_fired", [])
+    if not fired:
+        print("No new transitions since last run — nothing to post.")
         return
 
+    by_tk = {s["ticker"]: s for s in payload["sectors"]}
     reg = payload["regime"]
+    high = [a for a in fired if a["severity"] == "high"]
     lines = [f"*Smart Money · Sector Transition* — {payload['meta']['as_of']}",
-             f"Macro weather: *{reg['regime']}* — {reg['note']}", ""]
-    for s in sorted(hits, key=lambda x: -(x.get("csri") or -9)):
-        lines.append(f"*{s['ticker']} · {s['name']}* — {s['phase_label']} "
-                     f"(CSRI {s['csri']:+.2f}, {s['quadrant']})")
-        for r in s["phase_reasons"][:3]:
-            lines.append(f"    • {r}")
+             f"Macro weather: *{reg['regime']}* — {reg['note']}",
+             f"{len(fired)} new transition(s), {len(high)} high-severity", ""]
+    # group by ticker so a sector that changed on several dimensions reads as one
+    order, seen = [], set()
+    for a in fired:
+        if a["ticker"] not in seen:
+            seen.add(a["ticker"]); order.append(a["ticker"])
+    for tk in order:
+        s = by_tk.get(tk, {})
+        events = [a for a in fired if a["ticker"] == tk]
+        flag = "🔴 " if any(e["severity"] == "high" for e in events) else ""
+        lines.append(f"{flag}*{tk} · {s.get('name', tk)}*")
+        for a in events:
+            lines.append(f"    • {a['text']}")
         lines.append("")
 
     body = json.dumps({"text": "\n".join(lines)}).encode()
@@ -58,7 +72,7 @@ def post_webhook(payload: dict) -> None:
                                 headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            print(f"Webhook posted ({r.status}) — {len(hits)} signals.")
+            print(f"Webhook posted ({r.status}) — {len(fired)} new transitions.")
     except Exception as exc:  # noqa: BLE001
         print(f"Webhook failed: {exc}")
 

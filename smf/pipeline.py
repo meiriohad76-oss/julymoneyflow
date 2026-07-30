@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from . import config, flow, macro, metrics, providers, report, scoring
+from . import alert_state, config, flow, macro, metrics, providers, report, scoring
 
 
 def _constituent_universe(tickers: list[str]) -> tuple[dict[str, list[str]], list[str]]:
@@ -129,10 +129,24 @@ def run(tickers: list[str] | None = None,
     # the shadow only bites further up the function where `flow.collect` is called.
     rotation = scoring.rotation_flow([s for s in sectors if s["tier"] == 1])
 
+    # ---- fire-once alerts: diff this run's states against the last ----------
+    as_of = bench.index[-1].strftime("%Y-%m-%d")
+    # Always persists: reconcile is idempotent, so a rerun on unchanged data
+    # fires nothing and rewrites the same state. --render-only never reaches
+    # here (it returns from run.py before the pipeline).
+    alerts_fired = alert_state.apply(sectors, as_of)
+    if alerts_fired:
+        hi = sum(1 for a in alerts_fired if a["severity"] == "high")
+        log(f"\n[5] Fire-once alerts: {len(alerts_fired)} new since last run "
+            f"({hi} high-severity)")
+    else:
+        log("\n[5] Fire-once alerts: nothing changed since last run")
+
     payload = {
         "sectors": sectors,
         "regime": regime,
         "flow": rotation,
+        "alerts_fired": alerts_fired,
         "meta": {
             "as_of": bench.index[-1].strftime("%Y-%m-%d"),
             "generated_at": report.timestamp(),

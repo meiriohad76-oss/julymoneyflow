@@ -305,6 +305,32 @@ def main() -> int:
         ok(pat not in html, "MED", f"dashboard.html leaks a path/env token: {pat}")
 
     # ------------------------------------------------------------------
+    hdr("13. fire-once alerts are internally consistent")
+    fired = d.get("alerts_fired", [])
+    print(f"  {len(fired)} alerts fired in the last build")
+    tickers = {s["ticker"] for s in S}
+    for a in fired:
+        ok(a.get("ticker") in tickers, "HIGH",
+           f"alert references unknown ticker {a.get('ticker')}")
+        ok(a.get("severity") in ("high", "normal"), "MED",
+           f"alert has odd severity {a.get('severity')}")
+        ok(a.get("to") not in (None, 0, "Unknown", ""), "HIGH",
+           f"{a.get('ticker')}: alert fired INTO a no-data sentinel ({a.get('to')})")
+        ok("->" in a.get("text", "") or a.get("dim") == "flag", "MED",
+           f"{a.get('ticker')}: transition text missing an arrow")
+    # Reconciling the CURRENT snapshot against the persisted state must be a
+    # no-op: the pipeline just saved that state, so a re-diff can't produce new
+    # alerts. If it does, the save path and the read path disagree.
+    from smf import alert_state as _as
+    prev = _as.load()
+    if prev:
+        again, _ = _as.reconcile(S, prev, d["meta"]["as_of"])
+        ok(again == [], "HIGH",
+           f"re-diffing the saved state fires {len(again)} phantom alerts "
+           f"(persist/read mismatch)")
+        print(f"  re-diff against saved state: {len(again)} alerts (want 0)")
+
+    # ------------------------------------------------------------------
     print(f"\n{'=' * 60}")
     crit = [m for s_, m in issues if s_ == "CRITICAL"]
     high = [m for s_, m in issues if s_ == "HIGH"]

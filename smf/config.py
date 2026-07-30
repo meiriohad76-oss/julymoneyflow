@@ -477,6 +477,18 @@ TREND_HORIZON_SLOW = 63     # for indicators built on 200d+ internal averages
 TREND_MIN_HISTORY = 40      # below this, report no trend rather than a guess
 
 # ---------------------------------------------------------------------------
+# Fire-once alerts (smf/alert_state.py)
+# ---------------------------------------------------------------------------
+# A transition alerts once, not on every refresh. The cooldown is the flap
+# guard: how long the SAME transition is suppressed before it may re-fire.
+# 21 sessions = the validated forward horizon (fwd_21), so the alert clock
+# speaks the same timescale as the signals. Threshold flags (unusual volume,
+# block prints) get a shorter cooldown since a genuine repeat is real news.
+ALERT_STATE_ENABLED = True
+ALERT_COOLDOWN_SESSIONS = 21
+ALERT_FLAG_COOLDOWN_SESSIONS = 5
+
+# ---------------------------------------------------------------------------
 # Validation results, in a form a human can act on
 # ---------------------------------------------------------------------------
 # "Rank IC 0.036" is meaningless to anyone who does not already know what rank

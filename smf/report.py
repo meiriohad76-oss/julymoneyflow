@@ -193,13 +193,26 @@ tbody tr{cursor:pointer}
   font-size:10.5px;color:var(--dim);margin-bottom:6px}
 .ck{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .ck i{width:12px;height:2.5px;border-radius:2px;display:inline-block}
-.ck i.tri{width:0;height:0;background:none;border-left:4px solid transparent;
-  border-right:4px solid transparent;border-bottom:7px solid var(--dim)}
-.ck i.tri.hollow{border-bottom-color:var(--dim2);opacity:.55}
+.ck i.ln{width:14px;height:2px}
+.ck i.dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.ck i.dot.hollow{background:transparent;border:1.4px solid var(--dim2)}
 .ck.sep{margin-left:auto}
 .ck.dim{color:var(--dim2);font-style:italic}
 .bkt{cursor:pointer}
 .bkt:hover polygon{stroke-width:2.2}
+
+/* changed-since-last-run banner */
+.chg-panel{border-color:rgba(77,159,255,.35);margin-bottom:16px}
+.chg-list{display:grid;gap:7px}
+.chg-row{display:flex;gap:12px;align-items:baseline;padding:8px 10px;border-radius:8px;
+  background:var(--panel2);border:1px solid var(--line)}
+.chg-row.hi{border-color:rgba(255,93,108,.4)}
+.chg-tk{flex:0 0 150px;font-size:13px}
+.chg-tk .nm{color:var(--dim);font-size:11.5px}
+.chg-ev-wrap{display:flex;flex-wrap:wrap;gap:6px}
+.chg-ev{font-size:11px;color:var(--dim);background:var(--panel);border:1px solid var(--line);
+  border-radius:5px;padding:2px 7px}
+.chg-ev.hi{color:var(--red);border-color:rgba(255,93,108,.4)}
 
 /* refresh controls — hidden unless the server reports the feature is available,
    so the static file opened from disk shows no button that cannot work */
@@ -1171,47 +1184,63 @@ function thinBreakouts(list){
   return out;
 }
 
+/* The exact point where price crossed the SMA — the intersection of the two
+   line segments spanning [idx-1, idx], NOT the close on the detection bar.
+   Placing a marker at the close made it float away from the visual crossing
+   whenever price gapped through the average (a 150d "cross" was drawn 2 points
+   off its own line). Returns {i, v} in data space (fractional index, level). */
+function crossPoint(b, price, sma, n){
+  const i = b.idx, off = n - sma.length;
+  const si = i - off;                                  // sma index for this bar
+  if(i<=0 || si<=0 || si>=sma.length) return {i, v:b.price};
+  const p0=price[i-1], p1=price[i], m0=sma[si-1], m1=sma[si];
+  if(![p0,p1,m0,m1].every(Number.isFinite)) return {i, v:b.price};
+  const denom=(p1-p0)-(m1-m0);
+  let t = Math.abs(denom)<1e-9 ? 1 : (m0-p0)/denom;    // parallel -> land on the bar
+  t = Math.max(0, Math.min(1, t));
+  return {i: (i-1)+t, v: p0 + t*(p1-p0)};
+}
+
 function priceChart(s, w=760, h=330){
-  const px=(s.series.price||[]).filter(Number.isFinite);
-  if(px.length<10) return '<div class="sub">not enough price history</div>';
+  const price=(s.series.price||[]).filter(Number.isFinite);
+  if(price.length<10) return '<div class="sub">not enough price history</div>';
   const smas=[[20,s.series.sma20,'#4d9fff'],
               [50,s.series.sma50,'#f5c445'],
               [150,s.series.sma150,'#c88bff']];
+  const smaMap={20:s.series.sma20, 50:s.series.sma50, 150:s.series.sma150};
   const smaCol={20:'#4d9fff',50:'#f5c445',150:'#c88bff'};
-  const L=52, R=64, T=14, B=30;          // margins: room for labels and price tag
-  const n=px.length;
+  const L=50, R=62, T=16, B=32;
+  const n=price.length;
 
-  let vals=px.slice();
+  let vals=price.slice();
   smas.forEach(([,arr])=>{ if(arr) arr.filter(Number.isFinite).forEach(v=>vals.push(v)); });
   let lo=Math.min(...vals), hi=Math.max(...vals);
-  const pad=(hi-lo)*0.10||1; lo-=pad; hi+=pad;
+  const pad=(hi-lo)*0.12||1; lo-=pad; hi+=pad;
   const X=i=>L+(i/(n-1))*(w-L-R);
   const Y=v=>h-B-((v-lo)/(hi-lo))*(h-T-B);
 
-  const up = px[n-1] >= px[0];
+  const up = price[n-1] >= price[0];
   const accent = up ? '#22d38a' : '#ff5d6c';
   const uid = 's'+(s.ticker||'x').replace(/[^A-Za-z0-9]/g,'');
 
   let g='';
-  // Gradient area under the price, tinted by the direction of the window.
   g+=`<defs><linearGradient id="g${uid}" x1="0" y1="0" x2="0" y2="1">`
-    +`<stop offset="0%" stop-color="${accent}" stop-opacity=".22"/>`
+    +`<stop offset="0%" stop-color="${accent}" stop-opacity=".18"/>`
     +`<stop offset="100%" stop-color="${accent}" stop-opacity="0"/></linearGradient></defs>`;
 
-  // Grid: fewer lines, lighter, labels outside the plot.
+  // faint horizontal grid, labels outside the plot
   for(let k=0;k<=4;k++){
     const v=lo+(hi-lo)*k/4, y=Y(v);
-    g+=`<line x1="${L}" y1="${y.toFixed(1)}" x2="${w-R}" y2="${y.toFixed(1)}" `
-      +`stroke="#1c2740"/>`
-      +`<text x="${L-9}" y="${(y+3.5).toFixed(1)}" text-anchor="end" class="ax">`
+    g+=`<line x1="${L}" y1="${y.toFixed(1)}" x2="${w-R}" y2="${y.toFixed(1)}" stroke="#18233a"/>`
+      +`<text x="${L-8}" y="${(y+3.5).toFixed(1)}" text-anchor="end" class="ax">`
       +`${v.toFixed(v>=100?0:1)}</text>`;
   }
 
-  const linePts=px.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ');
+  const linePts=price.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ');
   g+=`<polygon points="${X(0).toFixed(1)},${(h-B).toFixed(1)} ${linePts} `
     +`${X(n-1).toFixed(1)},${(h-B).toFixed(1)}" fill="url(#g${uid})"/>`;
 
-  // SMAs beneath the price line — right-aligned so the last point is today.
+  // SMA lines — thin, so the white price line stays the focus
   smas.forEach(([p,arr,col])=>{
     if(!arr||arr.length<2) return;
     const off=n-arr.length;
@@ -1219,47 +1248,50 @@ function priceChart(s, w=760, h=330){
                  .filter(Boolean);
     if(pts.length>1)
       g+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${col}" `
-        +`stroke-width="1.3" opacity=".75" stroke-linejoin="round"/>`;
+        +`stroke-width="1.1" opacity=".65" stroke-linejoin="round"/>`;
   });
 
-  g+=`<polyline points="${linePts}" fill="none" stroke="#e6edf7" stroke-width="2" `
+  g+=`<polyline points="${linePts}" fill="none" stroke="#f2f6fc" stroke-width="1.9" `
     +`stroke-linejoin="round" stroke-linecap="round"/>`;
 
-  // Current price: dot plus a tag on the right edge, so the number you care
-  // about most does not have to be read off the axis.
-  const lastY=Y(px[n-1]);
+  // current price: dot + right-edge tag
+  const lastY=Y(price[n-1]);
   g+=`<line x1="${L}" y1="${lastY.toFixed(1)}" x2="${w-R}" y2="${lastY.toFixed(1)}" `
-    +`stroke="${accent}" stroke-dasharray="2 4" opacity=".5"/>`
+    +`stroke="${accent}" stroke-dasharray="2 4" opacity=".45"/>`
     +`<circle cx="${X(n-1).toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5" fill="${accent}"/>`
     +`<rect x="${(w-R+4).toFixed(1)}" y="${(lastY-9).toFixed(1)}" width="${R-8}" height="18" `
     +`rx="4" fill="${accent}" opacity=".18" stroke="${accent}" stroke-opacity=".5"/>`
     +`<text x="${(w-R/2).toFixed(1)}" y="${(lastY+4).toFixed(1)}" text-anchor="middle" `
-    +`class="ax" fill="${accent}" style="font-weight:650">${px[n-1].toFixed(2)}</text>`;
+    +`class="ax" fill="${accent}" style="font-weight:650">${price[n-1].toFixed(2)}</text>`;
 
-  // Breakouts, de-cluttered. Confirmed = filled, failed = hollow.
+  // Crossing markers, placed AT the intersection. A small ring hugging the
+  // crossing point with a short arrow in the cross direction. Confirmed = the
+  // ring is filled; failed-next-session = hollow.
   const shown=thinBreakouts(s.breakouts);
   shown.forEach(b=>{
     if(b.idx<0||b.idx>=n) return;
-    const x=X(b.idx), y=Y(b.price), isUp=b.direction==='up';
+    const cp=crossPoint(b, price, smaMap[b.sma]||[], n);
+    const x=X(cp.i), y=Y(cp.v), isUp=b.direction==='up';
     const col=smaCol[b.sma]||'#8b9ab5';
-    const r=4.2;
-    const d=isUp?`${x},${(y-r-3).toFixed(1)} ${(x-r).toFixed(1)},${(y-0.5).toFixed(1)} ${(x+r).toFixed(1)},${(y-0.5).toFixed(1)}`
-                :`${x},${(y+r+3).toFixed(1)} ${(x-r).toFixed(1)},${(y+0.5).toFixed(1)} ${(x+r).toFixed(1)},${(y+0.5).toFixed(1)}`;
     const solid=b.confirmed!==false;
+    const dir=isUp?-1:1;                                 // arrow points the way price crossed
+    const ax=x, ay=y+dir*10;                             // arrowhead tip
     g+=`<g class="bkt" data-b='${JSON.stringify(b).replace(/'/g,"&#39;")}'>`
-      +`<polygon points="${d}" fill="${solid?col:'#0a0e17'}" stroke="${col}" `
-      +`stroke-width="1.3"/>`
-      +`<circle cx="${x}" cy="${y}" r="9" fill="transparent"/></g>`;
+      +`<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${ax.toFixed(1)}" y2="${ay.toFixed(1)}" `
+      +`stroke="${col}" stroke-width="1.2" opacity=".8"/>`
+      +`<polygon points="${ax.toFixed(1)},${(ay+dir*3).toFixed(1)} ${(ax-3).toFixed(1)},${(ay-dir*2).toFixed(1)} ${(ax+3).toFixed(1)},${(ay-dir*2).toFixed(1)}" fill="${col}"/>`
+      +`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${solid?col:'#0c1220'}" `
+      +`stroke="${col}" stroke-width="1.4"/>`
+      +`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/></g>`;
   });
 
-  // x-axis. `dates` is aligned 1:1 with `price` (see _tail_dates), so index
-  // positionally rather than assuming a length.
+  // x-axis
   const dts=s.series.dates||[];
   if(dts.length===n && n>1){
     const short=d=>d? d.slice(5).replace('-','/') : '';
     [[0,'start'],[Math.floor((n-1)/3),'middle'],[Math.floor(2*(n-1)/3),'middle'],
      [n-1,'end']].forEach(([i,anch])=>{
-      if(dts[i]) g+=`<text x="${X(i).toFixed(1)}" y="${h-9}" text-anchor="${anch}" `
+      if(dts[i]) g+=`<text x="${X(i).toFixed(1)}" y="${h-10}" text-anchor="${anch}" `
                   +`class="ax">${short(dts[i])}</text>`;
     });
   }
@@ -1268,10 +1300,10 @@ function priceChart(s, w=760, h=330){
   const key=smas.filter(([,a])=>a&&a.length>1)
     .map(([p,,c])=>`<span class="ck"><i style="background:${c}"></i>${p}-day</span>`).join('');
   return `<div class="chartwrap">`
-    + `<div class="clegend"><span class="ck"><i style="background:#e6edf7"></i>Price</span>${key}`
-    + `<span class="ck sep"><i class="tri"></i>breakout held</span>`
-    + `<span class="ck"><i class="tri hollow"></i>failed next session</span>`
-    + (hid>0?`<span class="ck dim">${hid} clustered repeat${hid===1?'':'s'} hidden</span>`:'')
+    + `<div class="clegend"><span class="ck"><i class="ln" style="background:#f2f6fc"></i>Price</span>${key}`
+    + `<span class="ck sep"><i class="dot"></i>held</span>`
+    + `<span class="ck"><i class="dot hollow"></i>failed next session</span>`
+    + (hid>0?`<span class="ck dim">${hid} whipsaw repeat${hid===1?'':'s'} hidden</span>`:'')
     + `</div>`
     + `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMidYMid meet">${g}</svg>`
     + `</div>`;
@@ -1784,6 +1816,45 @@ def _regime_html(reg: dict, sectors: list[dict]) -> str:
 </div>"""
 
 
+def _changed_html(payload: dict) -> str:
+    """
+    "Changed since last run" banner — the fire-once transitions from this run.
+    Empty (renders nothing) when nothing changed, which is the common case.
+    """
+    fired = payload.get("alerts_fired") or []
+    if not fired:
+        return ""
+    order, seen = [], set()
+    for a in fired:
+        if a["ticker"] not in seen:
+            seen.add(a["ticker"]); order.append(a["ticker"])
+    by_tk = {s["ticker"]: s for s in payload["sectors"]}
+    n_high = sum(1 for a in fired if a.get("severity") == "high")
+
+    rows = []
+    for tk in order:
+        s = by_tk.get(tk, {})
+        events = [a for a in fired if a["ticker"] == tk]
+        hi = any(e.get("severity") == "high" for e in events)
+        chips = "".join(
+            f'<span class="chg-ev {"hi" if e.get("severity")=="high" else ""}">'
+            f'{e["text"]}</span>' for e in events)
+        rows.append(
+            f'<div class="chg-row{" hi" if hi else ""}">'
+            f'<div class="chg-tk"><b>{tk}</b> <span class="nm">{s.get("name", tk)}</span></div>'
+            f'<div class="chg-ev-wrap">{chips}</div></div>')
+
+    hi_txt = f" · <b class='r'>{n_high} high-severity</b>" if n_high else ""
+    return f"""
+<div class="panel chg-panel">
+  <h3>Changed since last run <span class="badge">{len(fired)} new{hi_txt}</span></h3>
+  <div class="sub" style="margin:4px 0 10px">Transitions that fired this run.
+    Each fires once on the change and stays quiet until it genuinely recurs
+    (flap-guarded for {config.ALERT_COOLDOWN_SESSIONS} sessions).</div>
+  <div class="chg-list">{"".join(rows)}</div>
+</div>"""
+
+
 def _alerts_html(sectors: list[dict]) -> str:
     from .scoring import PHASE_META
     ranked = sorted(
@@ -2179,6 +2250,8 @@ def render(payload: dict) -> str:
   </div>
 </header>
 
+{_changed_html(payload)}
+
 {_regime_html(reg, sectors)}
 
 {_macro_html(reg)}
@@ -2299,6 +2372,7 @@ def write_json(payload: dict, path=None) -> str:
         "meta": payload["meta"],
         "regime": payload["regime"],
         "flow": payload["flow"],
+        "alerts_fired": payload.get("alerts_fired", []),
         "sectors": [{k: v for k, v in s.items() if k != "_raw"} for s in payload["sectors"]],
     }
     path.write_text(json.dumps(clean, indent=2, default=str), encoding="utf-8")

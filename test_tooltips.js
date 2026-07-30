@@ -527,6 +527,34 @@ console.log(`  busiest chart: ${worstMarkers} markers`);
 ok(charted === sectors.length, 'every sector charts, sub-sectors included');
 ok(worstMarkers <= 20, `no chart is confetti (busiest has ${worstMarkers})`);
 
+// Every crossing marker must sit ON the line it crossed, at the interpolated
+// intersection — not at the close price, which floated markers up to 2 points
+// off their own SMA when price gapped through.
+const crossPoint = window.crossPoint;
+if (crossPoint) {
+  let checked = 0, worst = 0;
+  for (const s of sectors) {
+    const price = s.series.price, n = price.length;
+    const smaMap = { 20: s.series.sma20, 50: s.series.sma50, 150: s.series.sma150 };
+    for (const b of (s.breakouts || [])) {
+      if (b.idx < 1 || b.idx >= n) continue;
+      const arr = smaMap[b.sma]; if (!arr) continue;
+      const cp = crossPoint(b, price, arr, n);
+      const off = n - arr.length;
+      const si = Math.max(0, Math.min(arr.length - 1, Math.round(cp.i) - off));
+      const gap = Math.abs(cp.v - arr[si]);
+      worst = Math.max(worst, gap);
+      checked++;
+    }
+  }
+  ok(checked > 100, 'many crossing markers checked');
+  ok(worst < 1.5, `every marker lands on its SMA line (worst gap ${worst.toFixed(2)})`);
+  // A parallel/degenerate segment must fall back safely, not produce NaN.
+  const deg = crossPoint({ idx: 5, sma: 20, price: 50, direction: 'up' },
+                         [50, 50, 50, 50, 50, 50], [50, 50, 50, 50, 50, 50], 6);
+  ok(Number.isFinite(deg.i) && Number.isFinite(deg.v), 'degenerate crossing stays finite');
+}
+
 // Thinning must keep the FIRST of each cluster, never a later one, and must be
 // idempotent — running it twice changes nothing.
 const thin = window.thinBreakouts;
