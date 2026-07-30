@@ -25,6 +25,7 @@ DGS10       10-year yield level, for rate-sensitivity context.
 from __future__ import annotations
 
 import io
+import json
 import time
 import urllib.request
 from datetime import datetime
@@ -35,6 +36,8 @@ import pandas as pd
 from . import config
 
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}"
+FRED_API = ("https://api.stlouisfed.org/fred/series/observations"
+            "?series_id={sid}&api_key={key}&file_type=json")
 CACHE_DIR = config.CACHE_DIR / "fred"
 CACHE_DIR.mkdir(exist_ok=True)
 
@@ -61,34 +64,66 @@ LIQUIDITY_WEIGHTS = {"WALCL": 0.40, "RRPONTSYD": 0.25,
 _CACHE_HOURS = 12.0
 
 
+def _parse_csv(raw: str, sid: str) -> pd.Series:
+    """Keyless fredgraph CSV: first column dates, second column values."""
+    df = pd.read_csv(io.StringIO(raw))
+    date_col = df.columns[0]
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col]).set_index(date_col)
+    return pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna()
+
+
+def _parse_json(raw: str, sid: str) -> pd.Series:
+    """FRED JSON API: {"observations":[{"date","value"},...]}. Missing = '.'."""
+    doc = json.loads(raw)
+    obs = doc.get("observations", [])
+    idx = pd.to_datetime([o.get("date") for o in obs], errors="coerce")
+    val = pd.to_numeric([o.get("value") for o in obs], errors="coerce")
+    s = pd.Series(val, index=idx).dropna()
+    return s[s.index.notna()]
+
+
+def _read_cache(p) -> pd.Series:
+    df = pd.read_csv(p, index_col=0, parse_dates=True)
+    return pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna()
+
+
 def fetch_series(sid: str, max_age_hours: float = _CACHE_HOURS) -> pd.Series:
-    """One FRED series, cached to disk. Returns an empty Series on failure."""
+    """
+    One FRED series, cached to disk. Returns an empty Series on failure.
+
+    Prefers the keyed JSON API when FRED_API_KEY is set — it is the reliable,
+    rate-limited endpoint meant for automated use. Falls back to the keyless
+    fredgraph CSV export otherwise. Either way the result is cached, and a stale
+    cache is used if the network fails, so a blocked FRED never breaks the run.
+    """
     p = CACHE_DIR / f"{sid}.csv"
     if p.exists() and (time.time() - p.stat().st_mtime) / 3600.0 < max_age_hours:
         try:
-            df = pd.read_csv(p, index_col=0, parse_dates=True)
-            return pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna()
+            return _read_cache(p)
         except Exception:  # noqa: BLE001, S110
             pass
+
+    key = getattr(config, "FRED_API_KEY", "")
+    timeout = getattr(config, "FRED_TIMEOUT_SEC", 8)
+    if key:
+        url, parse = FRED_API.format(sid=sid, key=key), _parse_json
+    else:
+        url, parse = FRED_CSV.format(sid=sid), _parse_csv
     try:
-        req = urllib.request.Request(FRED_CSV.format(sid=sid),
-                                     headers={"User-Agent": "smf/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as r:
+        req = urllib.request.Request(url, headers={"User-Agent": "smf/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             raw = r.read().decode("utf-8", errors="replace")
-        df = pd.read_csv(io.StringIO(raw))
-        date_col = df.columns[0]
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        df = df.dropna(subset=[date_col]).set_index(date_col)
-        s = pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna()
+        s = parse(raw, sid)
         if len(s):
             s.to_frame(sid).to_csv(p)
         return s
     except Exception as exc:  # noqa: BLE001
-        print(f"    ! FRED {sid} failed: {type(exc).__name__}")
+        via = "API" if key else "CSV"
+        print(f"    ! FRED {sid} ({via}) failed: {type(exc).__name__}")
         if p.exists():
             try:
-                df = pd.read_csv(p, index_col=0, parse_dates=True)
-                return pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna()
+                return _read_cache(p)
             except Exception:  # noqa: BLE001, S110
                 pass
         return pd.Series(dtype=float)
@@ -180,5 +215,6 @@ def macro_weather(max_age_hours: float = _CACHE_HOURS) -> dict:
         "ten_year_yield": out.get("DGS10", {}).get("latest"),
         "components_used": len(weights),
         "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "source": "FRED (fredgraph CSV, no API key required)",
+        "source": ("FRED JSON API" if getattr(config, "FRED_API_KEY", "")
+                   else "FRED fredgraph CSV (keyless)"),
     }

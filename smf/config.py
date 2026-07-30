@@ -38,6 +38,14 @@ _load_dotenv()
 
 FMP_API_KEY = os.environ.get("FMP_API_KEY", "").strip()
 POLYGON_API_KEY = os.environ.get("POLYGON_API_KEY", "").strip()
+# Optional. With a key, macro.py uses FRED's JSON API (reliable, documented rate
+# limits). Without it, it falls back to the keyless fredgraph CSV export, which
+# is the human download feature and is slow/flaky for automated polling — six
+# 30s timeouts once wedged a Pi rebuild at 200s. Free key: fred.stlouisfed.org.
+FRED_API_KEY = os.environ.get("FRED_API_KEY", "").strip()
+# Per-series network timeout. Deliberately short: a blocked FRED endpoint should
+# fail fast and fall back to cache, not stall the whole run for minutes.
+FRED_TIMEOUT_SEC = float(os.environ.get("FRED_TIMEOUT_SEC", "8"))
 
 # Provider preference order. First one with a usable key wins; "yahoo" needs no key.
 #
